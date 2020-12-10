@@ -2,13 +2,13 @@
 the PHPMyAdmin interface, and partly in Jupyter via a Python connection.
 
 This is Tier 2 of the case study, which means that there'll be less guidance for you about how to setup
-your local SQLite connection in PART 2 of the case study. This will make the case study more challenging for you: 
+your local SQLite connection in PART 2 of the case study. This will make the case study more challenging for you:
 you might need to do some digging, and revise the Working with Relational Databases in Python chapter in the previous resource.
 
-Otherwise, the questions in the case study are exactly the same as with Tier 1. 
+Otherwise, the questions in the case study are exactly the same as with Tier 1.
 
 PART 1: PHPMyAdmin
-You will complete questions 1-9 below in the PHPMyAdmin interface. 
+You will complete questions 1-9 below in the PHPMyAdmin interface.
 Log in by pasting the following URL into your browser, and
 using the following Username and Password:
 
@@ -31,7 +31,7 @@ Before starting with the questions, feel free to take your time,
 exploring the data, and getting acquainted with the 3 tables. */
 
 
-/* QUESTIONS 
+/* QUESTIONS
 /* Q1: Some of the facilities charge a fee to members, but some do not.
 Write a SQL query to produce a list of the names of the facilities that do. */
 
@@ -91,8 +91,8 @@ Include in your output the name of the court, and the name of the member
 formatted as a single column. Ensure no duplicate data, and order by
 the member name. */
 
-SELECT 
-	DISTINCT CONCAT(m.firstname, " ", m.surname) AS fullname, 
+SELECT
+	DISTINCT CONCAT(m.firstname, " ", m.surname) AS fullname,
 	t.name AS court_name,
 	COUNT(b.starttime) AS times_used
 FROM
@@ -107,7 +107,7 @@ INNER JOIN
 	WHERE name LIKE 'Tennis%') AS t
 ON
 	b.facid = t.facid
-GROUP BY 
+GROUP BY
 	fullname
 ORDER BY
 	m.surname
@@ -124,19 +124,19 @@ Order by descending cost, and do not use any subqueries. */
 
 SELECT facility_name, member_name, SUM( booking_cost ) AS total_cost, starttime, bookid
 FROM 	(
-	SELECT 
-		f.name AS facility_name, 
+	SELECT
+		f.name AS facility_name,
 		CONCAT( m.firstname, " ", m.surname ) AS member_name,
 		CASE WHEN b.memid =0
 			THEN f.guestcost
 		WHEN b.memid !=0
-			THEN f.membercost END AS booking_cost, 
-		b.starttime, 
+			THEN f.membercost END AS booking_cost,
+		b.starttime,
 		b.bookid
 	FROM Facilities AS f
-	INNER JOIN Bookings AS b 
+	INNER JOIN Bookings AS b
 	ON b.facid = f.facid
-	INNER JOIN Members AS m 
+	INNER JOIN Members AS m
 	ON b.memid = m.memid
 	WHERE b.starttime LIKE '2012-09-14%'
 	) AS temp_table
@@ -152,8 +152,8 @@ ORDER BY total_cost DESC
 
 /* PART 2: SQLite
 
-Export the country club data from PHPMyAdmin, and connect to a local SQLite instance from Jupyter notebook 
-for the following questions.  
+Export the country club data from PHPMyAdmin, and connect to a local SQLite instance from Jupyter notebook
+for the following questions.
 
 QUESTIONS:
 /* Q10: Produce a list of facilities with a total revenue less than 1000.
@@ -161,54 +161,79 @@ The output of facility name and total revenue, sorted by revenue. Remember
 that there's a different cost for guests and members! */
 
 WITH subtable AS (
-	SELECT name, 
-	SUM(membercost) AS total_member, 
-	SUM(guestcost) AS total_guest 
-	FROM Facilities as f 
-	INNER JOIN Bookings as b 
-	ON b.facid = f.facid 
-	GROUP BY f.facid) 
-SELECT name, (total_member+total_guest) AS total_revenue 
-FROM subtable 
-WHERE total_revenue > 1000 
+	SELECT name,
+	SUM(membercost) AS total_member,
+	SUM(guestcost) AS total_guest
+	FROM Facilities as f
+	INNER JOIN Bookings as b
+	ON b.facid = f.facid
+	GROUP BY f.facid)
+SELECT name, (total_member+total_guest) AS total_revenue
+FROM subtable
+WHERE total_revenue > 1000
 ORDER BY total_revenue DESC
 
 /* Q11: Produce a report of members and who recommended them in alphabetic surname,firstname order */
 
-SELECT 	m1.memid, 
-	m1.firstname, 
-	m1.surname, 
-	m1.recommendedby, 
-	2.firstname AS rec_first, 
-	m2.surname AS rec_sur 
-FROM 	
-	Members AS m1 
-INNER JOIN 
+SELECT 	m1.memid,
+	m1.firstname,
+	m1.surname,
+	m1.recommendedby,
+	2.firstname AS rec_first,
+	m2.surname AS rec_sur
+FROM
+	Members AS m1
+INNER JOIN
 	(
-	SELECT 	firstname, 
-		surname, 
-		memid 
-	FROM Members) AS m2 
-ON m2.memid = m1.recommendedby 
+	SELECT 	firstname,
+		surname,
+		memid
+	FROM Members) AS m2
+ON m2.memid = m1.recommendedby
 ORDER BY m1.surname, m1.firstname
 
 
 /* Q12: Find the facilities with their usage by member, but not guests */
 
 WITH subtable AS (
-	SELECT * 
-	FROM Facilities as f 
-	INNER JOIN Bookings as b 
-	ON f.facid = b.facid 
-	WHERE b.memid != 0) 
-SELECT 
-	COUNT(DISTINCT bookid) AS times_used, 
-	name 
-FROM 
-	subtable 
-GROUP BY 
+	SELECT *
+	FROM Facilities as f
+	INNER JOIN Bookings as b
+	ON f.facid = b.facid
+	WHERE b.memid != 0)
+SELECT
+	COUNT(DISTINCT bookid) AS times_used,
+	name
+FROM
+	subtable
+GROUP BY
 	facid
 
 
 /* Q13: Find the facilities usage by month, but not guests */
 /* I could not figure out how to do this in SQL alone, so I brought the data into python and used pandas to count the number of times each facility was used each month. */
+
+SELECT f.name,concat(m.firstname,' ',m.surname) as Member,
+count(f.name) as bookings,
+
+sum(case when month(starttime) = 1 then 1 else 0 end) as Jan,
+sum(case when month(starttime) = 2 then 1 else 0 end) as Feb,
+sum(case when month(starttime) = 3 then 1 else 0 end) as Mar,
+sum(case when month(starttime) = 4 then 1 else 0 end) as Apr,
+sum(case when month(starttime) = 5 then 1 else 0 end) as May,
+sum(case when month(starttime) = 6 then 1 else 0 end) as Jun,
+sum(case when month(starttime) = 7 then 1 else 0 end) as Jul,
+sum(case when month(starttime) = 8 then 1 else 0 end) as Aug,
+sum(case when month(starttime) = 9 then 1 else 0 end) as Sep,
+sum(case when month(starttime) = 10 then 1 else 0 end) as Oct,
+sum(case when month(starttime) = 11 then 1 else 0 end) as Nov,
+sum(case when month(starttime) = 12 then 1 else 0 end) as Decm
+
+FROM Members m
+inner join Bookings bk on bk.memid = m.memid
+inner join Facilities f on f.facid = bk.facid
+where m.memid>0
+and year(starttime) = 2012
+
+group by f.name,concat(m.firstname,' ',m.surname)
+order by f.name,m.surname,m.firstname

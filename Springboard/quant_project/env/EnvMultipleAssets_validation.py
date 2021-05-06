@@ -58,6 +58,7 @@ class AssetEnvValidation(gym.Env):
 		# Load data from DataFrame
 		self.unique_dates = self.df['date'].unique()
 		self.data = self.df[self.df['date'] == self.unique_dates[self.day]]
+		self.prices = self.data['close']
 
 		# We don't start at the end
 		self.terminal = False
@@ -66,7 +67,7 @@ class AssetEnvValidation(gym.Env):
 		self.turbulence_threshold = turbulence_threshold
 
 		# Initialize the State
-		self.state = [INITIAL_ACCOUNT_BALANCE] + self.data['close'].values.tolist() + [0]*ASSET_DIM + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
+		self.state = [INITIAL_ACCOUNT_BALANCE] + self.data['close_scaled'].values.tolist() + [0]*ASSET_DIM + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
 
 		# Initialze reward
 		self.reward = 0
@@ -94,13 +95,13 @@ class AssetEnvValidation(gym.Env):
 		if self.turbulence < self.turbulence_threshold:
 			if self.state[index + ASSET_DIM + 1] > 0:
 				# update balance
-				self.state[0] += self.state[index + 1] * min(abs(action), self.state[index + ASSET_DIM + 1]) * (1 - TRANSACTION_FEE_PERCENT)
+				self.state[0] += self.prices.iloc[index] * min(abs(action), self.state[index + ASSET_DIM + 1]) * (1 - TRANSACTION_FEE_PERCENT)
 
 				# Update holdings
-				self.state[index + 1] -= min(abs(action), self.state[index + ASSET_DIM + 1])
+				self.state[index + ASSET_DIM + 1] -= min(abs(action), self.state[index + ASSET_DIM + 1])
 
 				# calculate transaction costs
-				self.cost += self.state[index + 1] * min(abs(action), self.state[index + ASSET_DIM + 1]) * TRANSACTION_FEE_PERCENT
+				self.cost += self.prices.iloc[index] * min(abs(action), self.state[index + ASSET_DIM + 1]) * TRANSACTION_FEE_PERCENT
 
 				# update trade count
 				self.trades += 1
@@ -111,13 +112,13 @@ class AssetEnvValidation(gym.Env):
 			# If turbulence is over the threshold, just close all positions
 			if self.state[index + ASSET_DIM + 1] > 0:
 				# update balance
-				self.state[0] += self.state[index + 1] * self.state[index + ASSET_DIM + 1] * (1 - TRANSACTION_FEE_PERCENT)
+				self.state[0] += self.prices.iloc[index] * self.state[index + ASSET_DIM + 1] * (1 - TRANSACTION_FEE_PERCENT)
 
 				# update holdings
 				self.state[index + ASSET_DIM + 1] = 0
 
 				# update transaction costs
-				self.cost += self.state[index + 1] * self.state[index + ASSET_DIM + 1] * TRANSACTION_FEE_PERCENT
+				self.cost += self.prices.iloc[index] * self.state[index + ASSET_DIM + 1] * TRANSACTION_FEE_PERCENT
 
 				# Update trade count
 				self.trades += 1
@@ -131,16 +132,16 @@ class AssetEnvValidation(gym.Env):
 		if self.turbulence < self.turbulence_threshold:
 			
 			# How many CAN we buy?
-			available_amount = self.state[0] // self.state[index + 1]
+			available_amount = self.state[0] // self.prices.iloc[index]
 
 			# Update Balance
-			self.state[0] -= self.state[index + 1] * min(available_amount, action) * (1 + TRANSACTION_FEE_PERCENT)
+			self.state[0] -= self.prices.iloc[index] * min(available_amount, action) * (1 + TRANSACTION_FEE_PERCENT)
 
 			# update holdings
 			self.state[index + ASSET_DIM + 1] += min(available_amount, action)
 
 			# update transaction costs
-			self.cost += self.state[index + 1] * min(available_amount, action) * TRANSACTION_FEE_PERCENT
+			self.cost += self.prices.iloc[index] * min(available_amount, action) * TRANSACTION_FEE_PERCENT
 
 			# update trade count
 			self.trades += 1
@@ -166,12 +167,17 @@ class AssetEnvValidation(gym.Env):
 			df_total_value.to_csv('results/account_value_validation_{}.csv'.format(self.iteration))
 
 			# Get ending balance
-			end_total_asset = self.state[0] + sum(np.array(self.state[1:(ASSET_DIM + 1)]) * np.array(self.state[(ASSET_DIM + 1):(ASSET_DIM * 2 + 1)]))
+			end_total_asset = self.state[0] + sum(np.array(self.prices) * np.array(self.state[(ASSET_DIM + 1):(ASSET_DIM * 2 + 1)]))
 
 			# get Sharpe ratio
 			df_total_value.columns = ['account_value']
 			df_total_value['daily_return'] = df_total_value.pct_change(1)
-			sharpe = (4 ** 0.5)*df_total_value['daily_return'].mean() / df_total_value['daily_return'].std()
+			std_total_value = df_total_value['daily_return'].std()
+			if std_total_value > 0:
+				sharpe = (4 ** 0.5)*df_total_value['daily_return'].mean() / std_total_value
+			else:
+				std_total_value = 1
+				sharpe = (4 ** 0.5)*df_total_value['daily_return'].mean() / std_total_value
 
 			return self.state, self.reward, self.terminal, {}
 
@@ -184,7 +190,7 @@ class AssetEnvValidation(gym.Env):
 				actions = np.array([-HMAX_NORMALIZE] * ASSET_DIM)
 
 			# get starting account value
-			begin_total_asset = self.state[0] + sum(np.array(self.state[1:(ASSET_DIM + 1)]) * np.array(self.state[(ASSET_DIM + 1):(ASSET_DIM * 2 + 1)]))
+			begin_total_asset = self.state[0] + sum(np.array(self.prices) * np.array(self.state[(ASSET_DIM + 1):(ASSET_DIM * 2 + 1)]))
 
 			# sort actions (index)
 			argsort_actions = np.argsort(actions)
@@ -203,13 +209,14 @@ class AssetEnvValidation(gym.Env):
 			# Step forward in time
 			self.day += 1
 			self.data = self.df[self.df['date'] == self.unique_dates[self.day]]
+			self.prices = self.data['close']
 			self.turbulence = self.data['turbulence'].values[0]
 
 			# get new state
-			self.state = [self.state[0]] + self.data['close'].values.tolist() + list(self.state[(ASSET_DIM + 1): (ASSET_DIM * 2 + 1)]) + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
+			self.state = [self.state[0]] + self.data['close_scaled'].values.tolist() + list(self.state[(ASSET_DIM + 1): (ASSET_DIM * 2 + 1)]) + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
 
 			# get new total value, used to calculate the reward
-			end_total_asset = self.state[0] + sum(np.array(self.state[1:(ASSET_DIM + 1)]) * np.array(self.state[(ASSET_DIM + 1):(ASSET_DIM * 2 + 1)]))	
+			end_total_asset = self.state[0] + sum(np.array(self.prices) * np.array(self.state[(ASSET_DIM + 1):(ASSET_DIM * 2 + 1)]))	
 			
 			# add new value to memory
 			self.asset_memory.append(end_total_asset)
@@ -221,7 +228,7 @@ class AssetEnvValidation(gym.Env):
 			self.rewards_memory.append(self.reward)
 
 			# Scale the reward
-			self.reward = self.reward * REWARD_SCALING
+			self.reward = self.reward / begin_total_asset
 
 		return self.state, self.reward, self.terminal, {}
 
@@ -230,13 +237,14 @@ class AssetEnvValidation(gym.Env):
 		self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
 		self.day = 0
 		self.data = self.df[self.df['date'] == self.unique_dates[self.day]]
+		self.prices = self.data['close']
 		self.turbulence = 0
 		self.cost = 0
 		self.trades = 0
 		self.terminal = False
 		self.rewards_memory = []
 
-		self.state = [INITIAL_ACCOUNT_BALANCE] + self.data['close'].values.tolist() + [0]*ASSET_DIM + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
+		self.state = [INITIAL_ACCOUNT_BALANCE] + self.data['close_scaled'].values.tolist() + [0]*ASSET_DIM + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
 
 		return self.state
 

@@ -28,7 +28,7 @@ def run_model() -> None:
 		data = add_turbulence(data)
 		data.to_csv(preprocessed_path)
 
-	print("Peak at data: /n", data.head())
+	print("Peek at data: /n", data.head())
 	print("Size of data: /n", data.size)
 
 	# train through 2015, then validate, then test from 2018 on

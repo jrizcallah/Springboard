@@ -56,12 +56,13 @@ class AssetEnvTrain(gym.Env):
 		# Load data from pandas dataframe
 		self.unique_dates = self.df['date'].unique()
 		self.data = self.df[self.df['date'] == self.unique_dates[self.day]]
+		self.prices = self.data['close']
 
 		# Terminal is FALSE until the end
 		self.terminal = False
 
 		# Initialize the state
-		self.state = [INITIAL_ACCOUNT_BALANCE] + self.data['close'].values.tolist() + [0]*ASSET_DIM + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
+		self.state = [INITIAL_ACCOUNT_BALANCE] + self.data['close_scaled'].values.tolist() + [0]*ASSET_DIM + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
 
 		# Initialize the reward
 		self.reward = 0
@@ -80,10 +81,10 @@ class AssetEnvTrain(gym.Env):
 		""" This function performs a sell action based on sign of the action """
 		if self.state[index+ASSET_DIM+1] > 0:
 			# Update balance
-			self.state[0] += self.state[index+1]*min(abs(action), self.state[index+ASSET_DIM+1]) * (1 - TRANSACTION_FEE_PERCENT)
+			self.state[0] += self.prices.iloc[index]*min(abs(action), self.state[index + ASSET_DIM + 1]) * (1 - TRANSACTION_FEE_PERCENT)
 
 			self.state[index + ASSET_DIM + 1] -= min(abs(action), self.state[index + ASSET_DIM + 1])
-			self.cost += self.state[index + 1] * min(abs(action), self.state[index + ASSET_DIM + 1]) * TRANSACTION_FEE_PERCENT
+			self.cost += self.prices.iloc[index] * min(abs(action), self.state[index + ASSET_DIM + 1]) * TRANSACTION_FEE_PERCENT
 
 			self.trades += 1
 		else:
@@ -93,14 +94,14 @@ class AssetEnvTrain(gym.Env):
 		""" This function performs a buy action based on the sign of the action """
 		
 		# How many CAN we buy?
-		available_amount = self.state[0] // self.state[index + 1]
+		available_amount = self.state[0] // self.prices.iloc[index]
 
 		# Update balance
-		self.state[0] -= self.state[index + 1] * min(available_amount, action) * (1 + TRANSACTION_FEE_PERCENT)
+		self.state[0] -= self.prices.iloc[index] * min(available_amount, action) * (1 + TRANSACTION_FEE_PERCENT)
 
 		self.state[index + ASSET_DIM + 1] += min(available_amount, action)
 
-		self.cost += self.state[index + 1] * min(available_amount, action) * TRANSACTION_FEE_PERCENT
+		self.cost += self.prices.iloc[index] * min(available_amount, action) * TRANSACTION_FEE_PERCENT
 
 		self.trades += 1
 
@@ -116,7 +117,7 @@ class AssetEnvTrain(gym.Env):
 			plt.savefig('results/account_value_train.png')
 			plt.close()
 
-			end_total_asset = self.state[0] + sum(np.array(self.state[1:(ASSET_DIM+1)])*np.array(self.state[(ASSET_DIM+1):(ASSET_DIM*2+1)]))
+			end_total_asset = self.state[0] + sum(np.array(self.prices)*np.array(self.state[(ASSET_DIM+1):(ASSET_DIM*2+1)]))
 
 			df_total_value = pd.DataFrame(self.asset_memory)
 			df_total_value.to_csv('results/account_value_train.csv')
@@ -136,7 +137,7 @@ class AssetEnvTrain(gym.Env):
 			actions = actions * HMAX_NORMALIZE
 
 			# Find starting account value
-			begin_total_asset = self.state[0] + sum(np.array(self.state[1:(ASSET_DIM+1)]) * np.array(self.state[(ASSET_DIM+1):(ASSET_DIM*2+1)]))
+			begin_total_asset = self.state[0] + sum(np.array(self.prices) * np.array(self.state[(ASSET_DIM+1):(ASSET_DIM*2+1)]))
 
 
 			# Take actions
@@ -155,23 +156,33 @@ class AssetEnvTrain(gym.Env):
 			# Move forward in time
 			self.day += 1
 			self.data = self.df[self.df['date'] == self.unique_dates[self.day]]
+			self.prices = self.data['close']
 
 			# Get next state
-			self.state = [self.state[0]] + self.data['close'].values.tolist() + list(self.state[(ASSET_DIM+1):(ASSET_DIM*2+1)]) + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
+			self.state = [self.state[0]] + self.data['close_scaled'].values.tolist() + list(self.state[(ASSET_DIM+1):(ASSET_DIM*2+1)]) + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
 
 			# Get new account value
-			end_total_asset = self.state[0] + sum(np.array(self.state[1:(ASSET_DIM+1)]) * np.array(self.state[(ASSET_DIM+1):(ASSET_DIM*2+1)]))
+			end_total_asset = self.state[0] + sum(np.array(self.prices) * np.array(self.state[(ASSET_DIM+1):(ASSET_DIM*2+1)]))
 
 			# Remember new portfolio value
 			self.asset_memory.append(end_total_asset)
 
 			# Calculate Reward
-			self.reward = end_total_asset - begin_total_asset
+			self.reward = ((end_total_asset - begin_total_asset) / begin_total_asset)
 
 			# Remember reward
 			self.rewards_memory.append(self.reward)
 
-			self.reward = self.reward*REWARD_SCALING
+
+			## Standardize Reward
+			#mean_reward = np.mean(self.rewards_memory)
+			#if len(self.rewards_memory) > 1:
+			#	std_reward = np.std(self.rewards_memory)
+			#else:
+			#	std_reward = 1
+
+			self.reward = (self.reward - 1) * 100
+
 
 		return self.state, self.reward, self.terminal, {}
 
@@ -180,12 +191,13 @@ class AssetEnvTrain(gym.Env):
 		self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
 		self.day = 0
 		self.data = self.df[self.df['date'] == self.unique_dates[self.day]]
+		self.prices = self.data['close']
 		self.cost = 0
 		self.trades = 0
 		self.terminal = False
 		self.rewards_memory = []
 
-		self.state = [INITIAL_ACCOUNT_BALANCE] + self.data['close'].values.tolist() + [0]*ASSET_DIM + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
+		self.state = [INITIAL_ACCOUNT_BALANCE] + self.data['close_scaled'].values.tolist() + [0]*ASSET_DIM + self.data['macd'].values.tolist() + self.data['rsi'].values.tolist() + self.data['cci'].values.tolist() + self.data['adx'].values.tolist()
 
 		return self.state
 

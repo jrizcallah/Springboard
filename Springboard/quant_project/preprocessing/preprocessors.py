@@ -216,4 +216,3 @@ def calculate_turbulence(df):
 	return turbulence_index
 
 
-
